@@ -180,6 +180,11 @@ export default function App() {
   const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [repHistory, setRepHistory] = useState<ReputationEvent[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<{ 
+    isOpen: boolean; 
+    type: 'accept_claim' | 'reject_claim' | 'finalize_bounty' | 'cancel_bounty' | null;
+    data?: any;
+  }>({ isOpen: false, type: null });
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -527,6 +532,27 @@ export default function App() {
     }
   };
 
+  const cancelBounty = async () => {
+    if (!activeBounty || !user || activeBounty.creatorUid !== user.uid) return;
+    try {
+      await updateDoc(doc(db, 'bounties', activeBounty.id), { status: 'cancelled' });
+      setActiveBounty(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      alert("Protocol Bounty Cancelled.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `bounties/${activeBounty.id}`);
+    }
+  };
+
+  const handleActionConfirm = () => {
+    const { type, data } = confirmDialog;
+    setConfirmDialog({ isOpen: false, type: null });
+
+    if (type === 'accept_claim') updateClaimStatus(data.claim, 'accepted');
+    if (type === 'reject_claim') updateClaimStatus(data.claim, 'rejected');
+    if (type === 'finalize_bounty') finalizeBounty(data.claim);
+    if (type === 'cancel_bounty') cancelBounty();
+  };
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center font-mono animate-pulse uppercase">
@@ -715,12 +741,25 @@ export default function App() {
                         animate={{ opacity: 1, scale: 1 }}
                         className="bg-white border-2 border-black p-6 space-y-4 shadow-[8px_8px_0_0_rgba(0,0,0,1)]"
                       >
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-center bg-black/5 p-4 border border-black">
                           <div>
-                            <span className="font-mono text-[10px] uppercase opacity-40">Bounty Breakdown</span>
-                            <h3 className="text-2xl font-black uppercase italic leading-none">{activeBounty.title}</h3>
+                            <span className="font-mono text-[10px] uppercase opacity-40">Mission Breakdown</span>
+                            <div className="flex items-center gap-3">
+                              <h3 className="text-2xl font-black uppercase italic leading-none">{activeBounty.title}</h3>
+                              <span className="bg-black text-[#E4E3E0] text-[10px] font-mono px-2 py-0.5 uppercase italic">{activeBounty.status}</span>
+                            </div>
                           </div>
-                          <button onClick={() => setActiveBounty(null)} className="font-mono text-xs uppercase hover:line-through">Close Detail</button>
+                          <div className="flex flex-col items-end gap-2">
+                            <button onClick={() => setActiveBounty(null)} className="font-mono text-xs uppercase hover:line-through">[CLOSE DETAIL]</button>
+                            {activeBounty.creatorUid === user.uid && activeBounty.status === 'open' && (
+                              <button 
+                                onClick={() => setConfirmDialog({ isOpen: true, type: 'cancel_bounty' })}
+                                className="text-red-700 font-mono text-[8px] uppercase font-bold hover:underline"
+                              >
+                                Cancel Broadcast
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="font-mono text-xs leading-relaxed border-l-2 border-black pl-4 py-2 opacity-80">{activeBounty.description}</p>
                         
@@ -774,13 +813,13 @@ export default function App() {
                                       {c.status === 'pending' && (
                                         <div className="flex gap-2">
                                           <button 
-                                            onClick={() => updateClaimStatus(c, 'accepted')}
+                                            onClick={() => setConfirmDialog({ isOpen: true, type: 'accept_claim', data: { claim: c } })}
                                             className="px-2 py-1 bg-green-100 border border-green-800 text-green-800 font-mono text-[10px] uppercase font-bold hover:bg-green-800 hover:text-white"
                                           >
                                             Accept
                                           </button>
                                           <button 
-                                            onClick={() => updateClaimStatus(c, 'rejected')}
+                                            onClick={() => setConfirmDialog({ isOpen: true, type: 'reject_claim', data: { claim: c } })}
                                             className="px-2 py-1 bg-red-100 border border-red-800 text-red-800 font-mono text-[10px] uppercase font-bold hover:bg-red-800 hover:text-white"
                                           >
                                             Reject
@@ -789,7 +828,7 @@ export default function App() {
                                       )}
                                       {c.status === 'accepted' && activeBounty.status === 'claimed' && (
                                         <button 
-                                          onClick={() => finalizeBounty(c)}
+                                          onClick={() => setConfirmDialog({ isOpen: true, type: 'finalize_bounty', data: { claim: c } })}
                                           className="px-2 py-1 bg-black text-white border border-black font-mono text-[10px] uppercase font-bold hover:scale-105 transition-transform whitespace-nowrap"
                                         >
                                           Finalize & Release Rep
@@ -1113,6 +1152,47 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <AnimatePresence>
+        {confirmDialog.isOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDialog({ isOpen: false, type: null })}
+              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-sm bg-[#E4E3E0] border-2 border-black p-6 shadow-[4px_4px_0_0_rgba(0,0,0,1)] z-10"
+            >
+              <h3 className="font-mono font-black text-sm uppercase italic mb-4">Confirm Protocol Action</h3>
+              <p className="font-mono text-[11px] uppercase opacity-60 leading-relaxed mb-6">
+                Are you sure you want to proceed with this 
+                <span className="text-black font-bold"> {confirmDialog.type?.replace('_', ' ')}</span>? 
+                This action may have irreversible effects on the reputation network.
+              </p>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleActionConfirm}
+                  className="flex-1 bg-black text-white p-2 font-mono text-[10px] uppercase font-bold hover:bg-black/90"
+                >
+                  Proceed
+                </button>
+                <button 
+                  onClick={() => setConfirmDialog({ isOpen: false, type: null })}
+                  className="flex-1 border border-black p-2 font-mono text-[10px] uppercase font-bold hover:bg-black/5"
+                >
+                  Abort
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showPohModal && (
