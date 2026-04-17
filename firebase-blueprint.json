@@ -49,9 +49,27 @@
         "claimerUid": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "submitted"] },
         "submissionUrl": { "type": "string" },
-        "claimedAt": { "type": "string", "format": "date-time" }
+        "claimedAt": { "type": "string", "format": "date-time" },
+        "isDisputed": { "type": "boolean" }
       },
       "required": ["bountyId", "claimerUid", "status"]
+    },
+    "Dispute": {
+      "title": "Dispute Case",
+      "description": "A formal dispute regarding a bounty claim.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "bountyId": { "type": "string" },
+        "claimId": { "type": "string" },
+        "disputantUid": { "type": "string" },
+        "creatorUid": { "type": "string" },
+        "evidence": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "judgment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bountyId", "claimId", "disputantUid", "status", "createdAt"]
     },
     "ReputationEvent": {
       "title": "Reputation Event",
@@ -83,6 +101,10 @@
     "/bounties/{bountyId}/claims/{claimId}": {
       "schema": "BountyClaim",
       "description": "Access claims for a specific bounty"
+    },
+    "/disputes/{disputeId}": {
+      "schema": "Dispute",
+      "description": "Access formal dispute records"
     }
   }
 }

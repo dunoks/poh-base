@@ -40,7 +40,9 @@ import {
   Github,
   Database,
   Fingerprint,
-  Cpu
+  Cpu,
+  Gavel,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
@@ -88,6 +90,19 @@ interface BountyClaim {
   status: 'pending' | 'accepted' | 'rejected' | 'submitted';
   submissionUrl?: string;
   claimedAt: any;
+  isDisputed?: boolean;
+}
+
+interface Dispute {
+  id: string;
+  bountyId: string;
+  claimId: string;
+  disputantUid: string;
+  creatorUid: string;
+  evidence: string;
+  status: 'active' | 'resolved';
+  judgment?: string;
+  createdAt: any;
 }
 
 interface ReputationEvent {
@@ -103,26 +118,32 @@ interface ReputationEvent {
 
 const Navbar = ({ 
   user, 
+  profile,
   onLogin, 
   onLogout,
   wallet,
-  onConnectWallet 
+  onConnectWallet,
+  setView
 }: { 
   user: FirebaseUser | null, 
+  profile: UserProfile | null,
   onLogin: () => void, 
   onLogout: () => void,
   wallet: string | null,
-  onConnectWallet: () => void
+  onConnectWallet: () => void,
+  setView: (v: 'market' | 'profile' | 'create' | 'moderation') => void
 }) => (
   <nav className="border-b border-black p-4 flex justify-between items-center sticky top-0 bg-[#E4E3E0] z-50">
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('market')}>
       <ShieldCheck className="w-8 h-8" />
       <span className="font-mono font-bold text-xl tracking-tighter uppercase italic">BaseTrust</span>
     </div>
     <div className="flex items-center gap-6">
       <div className="hidden md:flex gap-4 font-mono text-xs uppercase tracking-widest">
-        <button className="hover:line-through cursor-pointer">Marketplace</button>
-        <button className="hover:line-through cursor-pointer">Reputation</button>
+        <button className="hover:line-through cursor-pointer" onClick={() => setView('market')}>Marketplace</button>
+        {profile?.ethosStatus === 'admin' && (
+          <button className="hover:line-through cursor-pointer text-red-600 font-black" onClick={() => setView('moderation')}>Moderation</button>
+        )}
         <button className="hover:line-through cursor-pointer">About</button>
       </div>
       <div className="flex items-center gap-3">
@@ -166,7 +187,7 @@ export default function App() {
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [wallet, setWallet] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'market' | 'profile' | 'create'>('market');
+  const [view, setView] = useState<'market' | 'profile' | 'create' | 'moderation'>('market');
   const [showPohModal, setShowPohModal] = useState(false);
   const [verifyingPoh, setVerifyingPoh] = useState<string | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -177,6 +198,9 @@ export default function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
   const [claims, setClaims] = useState<BountyClaim[]>([]);
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [showDisputeModal, setShowDisputeModal] = useState<{ isOpen: boolean; claim: BountyClaim | null }>({ isOpen: false, claim: null });
+  const [disputeEvidence, setDisputeEvidence] = useState('');
   const [submissionUrl, setSubmissionUrl] = useState('');
   const [stakeInput, setStakeInput] = useState('0.1');
   const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
@@ -251,6 +275,17 @@ export default function App() {
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'claims'));
     return unsubscribe;
   }, [user, activeBounty]);
+
+  // Disputes Listener
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'disputes'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const dList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Dispute));
+      setDisputes(dList);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'disputes'));
+    return unsubscribe;
+  }, [user]);
 
   // Reputation History Listener
   useEffect(() => {
@@ -576,6 +611,46 @@ export default function App() {
     }
   };
 
+  const fileDispute = async () => {
+    if (!user || !showDisputeModal.claim || !profile) return;
+    if (profile.reputationScore < 25) {
+      alert("Minimum 25 Reputation Points required to initiate a protocol dispute.");
+      return;
+    }
+    try {
+      const { claim } = showDisputeModal;
+      const disputeData = {
+        bountyId: claim.bountyId,
+        claimId: claim.id,
+        disputantUid: user.uid,
+        creatorUid: activeBounty?.creatorUid || '',
+        evidence: disputeEvidence,
+        status: 'active',
+        createdAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'disputes'), disputeData);
+      await updateDoc(doc(db, 'bounties', claim.bountyId, 'claims', claim.id), { isDisputed: true });
+      setShowDisputeModal({ isOpen: false, claim: null });
+      setDisputeEvidence('');
+      alert("Protocol Dispute Filed. Monitoring case...");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'disputes');
+    }
+  };
+
+  const resolveDispute = async (dispute: Dispute, judgment: string) => {
+    if (!user || profile?.ethosStatus !== 'admin') return;
+    try {
+      await updateDoc(doc(db, 'disputes', dispute.id), {
+        status: 'resolved',
+        judgment
+      });
+      alert("Protocol Case Resolved. Judgment finalized.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `disputes/${dispute.id}`);
+    }
+  };
+
   const handleActionConfirm = () => {
     const { type, data } = confirmDialog;
     setConfirmDialog({ isOpen: false, type: null });
@@ -598,10 +673,12 @@ export default function App() {
     <div className="min-h-screen">
       <Navbar 
         user={user} 
+        profile={profile}
         onLogin={() => setShowLoginModal(true)} 
         onLogout={handleLogout} 
         wallet={wallet}
         onConnectWallet={connectWallet}
+        setView={setView}
       />
 
       <main className="max-w-6xl mx-auto p-4 md:p-8">
@@ -867,6 +944,19 @@ export default function App() {
                                           Finalize & Release Rep
                                         </button>
                                       )}
+                                      {c.claimerUid === user.uid && !c.isDisputed && (c.status === 'rejected' || (c.status === 'accepted' && activeBounty.status === 'claimed')) && (
+                                        <button 
+                                          onClick={() => setShowDisputeModal({ isOpen: true, claim: c })}
+                                          className="px-2 py-1 border border-black bg-yellow-400 text-black font-mono text-[10px] uppercase font-bold hover:bg-black hover:text-white"
+                                        >
+                                          File Dispute
+                                        </button>
+                                      )}
+                                      {c.isDisputed && (
+                                        <div className="px-2 py-1 bg-red-100 border border-red-800 text-red-800 font-mono text-[10px] uppercase font-bold flex items-center gap-1">
+                                          <AlertCircle className="w-3 h-3" /> Disputed
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -910,6 +1000,100 @@ export default function App() {
                         Broadcast Bounty to Network
                       </button>
                     </form>
+                  </motion.section>
+                )}
+
+                {view === 'moderation' && profile?.ethosStatus === 'admin' && (
+                  <motion.section 
+                    key="moderation"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-8"
+                  >
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <h2 className="font-mono font-black text-3xl uppercase italic leading-none m-0">Protocol Watch</h2>
+                        <p className="font-mono text-[10px] uppercase opacity-40 mt-1">Dispute Resolution & Evidence Review</p>
+                      </div>
+                      <div className="font-mono text-[10px] uppercase font-bold border border-black px-2 py-1 bg-black text-white animate-pulse">
+                        Active Cases: {disputes.filter(d => d.status === 'active').length}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-6">
+                      {disputes.length === 0 ? (
+                        <div className="bg-white border border-black p-12 text-center font-mono text-xs uppercase opacity-40 italic">
+                          No protocol incidents currently flagged.
+                        </div>
+                      ) : (
+                        disputes.map(d => (
+                          <div key={d.id} className="bg-white border-2 border-black p-6 shadow-[8px_8px_0_0_rgba(0,0,0,1)] flex flex-col md:flex-row gap-6">
+                            <div className="flex-1 space-y-4">
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  "px-2 py-1 font-mono text-[10px] font-black uppercase tracking-tighter",
+                                  d.status === 'active' ? "bg-red-600 text-white" : "bg-green-600 text-white"
+                                )}>
+                                  Case #{d.id.slice(0, 8)} | {d.status}
+                                </span>
+                                <span className="font-mono text-[10px] uppercase font-bold opacity-40 italic">
+                                  Opened {formatDistanceToNow(d.createdAt.toDate())} ago
+                                </span>
+                              </div>
+                              <div className="space-y-2">
+                                <h4 className="font-mono text-[10px] uppercase font-bold opacity-40">Witness Evidence Statement</h4>
+                                <div className="p-4 bg-black/5 border border-black/10 font-mono text-xs leading-relaxed italic">
+                                  "{d.evidence}"
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="font-mono text-[9px] uppercase opacity-40 font-bold">Disputant (Claimer)</label>
+                                  <div className="font-mono text-[10px] uppercase font-black">{d.disputantUid}</div>
+                                </div>
+                                <div>
+                                  <label className="font-mono text-[9px] uppercase opacity-40 font-bold">Subject (Creator)</label>
+                                  <div className="font-mono text-[10px] uppercase font-black">{d.creatorUid}</div>
+                                </div>
+                              </div>
+                              {d.judgment && (
+                                <div className="border border-green-800 bg-green-50 p-4">
+                                  <h4 className="font-mono text-[10px] uppercase font-black text-green-800 mb-1 flex items-center gap-1">
+                                    <ShieldCheck className="w-3 h-3" /> Protocol Judgment
+                                  </h4>
+                                  <p className="font-mono text-[10px] text-green-900 leading-relaxed italic">{d.judgment}</p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="md:w-64 border-l border-black/10 md:pl-6 space-y-4">
+                              <h4 className="font-mono text-[10px] uppercase font-black italic">Finalize Case</h4>
+                              {d.status === 'active' ? (
+                                <form onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const formData = new FormData(e.currentTarget);
+                                  resolveDispute(d, formData.get('judgment') as string);
+                                }} className="space-y-3">
+                                  <textarea 
+                                    name="judgment" 
+                                    required 
+                                    placeholder="Enter protocol verdict..."
+                                    className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-[10px] focus:outline-none min-h-[100px]"
+                                  />
+                                  <button type="submit" className="w-full bg-black text-white font-mono text-[10px] uppercase font-black py-2 hover:bg-green-600 transition-colors">
+                                    Release Verdict
+                                  </button>
+                                </form>
+                              ) : (
+                                <div className="text-center py-8">
+                                  <CheckCircle2 className="w-12 h-12 mx-auto text-green-600 mb-2" />
+                                  <span className="font-mono text-[10px] uppercase font-black opacity-40">Case Resolved</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </motion.section>
                 )}
 
@@ -1203,6 +1387,60 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <AnimatePresence>
+        {showDisputeModal.isOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDisputeModal({ isOpen: false, claim: null })}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-white border-2 border-black p-8 shadow-[12px_12px_0_0_rgba(0,0,0,1)] z-10"
+            >
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="font-mono font-black text-2xl uppercase italic leading-none m-0">Initiate Dispute</h2>
+                  <p className="font-mono text-[10px] uppercase opacity-40 mt-1">Ethos Protection Protocol</p>
+                </div>
+                <button onClick={() => setShowDisputeModal({ isOpen: false, claim: null })} className="font-mono font-bold uppercase hover:line-through">Close</button>
+              </div>
+
+              <div className="space-y-6">
+                 <div className="p-4 bg-yellow-50 border border-yellow-200">
+                   <p className="font-mono text-[10px] leading-relaxed text-yellow-900 uppercase font-black italic">
+                     WARNING: Providing false evidence in a protocol dispute will result in immediate permanent reputation slash.
+                   </p>
+                 </div>
+
+                 <div className="space-y-2">
+                   <label className="font-mono text-[10px] uppercase opacity-40 font-bold">Nature of Claim / Evidence</label>
+                   <textarea 
+                     value={disputeEvidence}
+                     onChange={(e) => setDisputeEvidence(e.target.value)}
+                     rows={5}
+                     placeholder="Describe the issue. (e.g. Creator rejected valid work, Creator is unresponsive for 7+ days after mission completion...)"
+                     className="w-full bg-[#E4E3E0] border border-black p-4 font-mono text-xs focus:outline-none focus:ring-1 ring-black"
+                   />
+                 </div>
+
+                 <button 
+                  onClick={fileDispute}
+                  className="w-full bg-black text-white p-4 font-mono font-black uppercase italic hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                 >
+                   <Gavel className="w-5 h-5" /> File Case to Registry
+                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showLoginModal && (

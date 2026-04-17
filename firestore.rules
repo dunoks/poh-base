@@ -124,7 +124,20 @@ service cloud.firestore {
              data.bountyId == bountyId &&
              data.status in ['pending', 'accepted', 'rejected', 'submitted'] &&
              data.claimedAt is timestamp &&
-             (!('submissionUrl' in data) || data.submissionUrl is string && data.submissionUrl.size() <= 500);
+             (!('submissionUrl' in data) || data.submissionUrl is string && data.submissionUrl.size() <= 500) &&
+             (!('isDisputed' in data) || data.isDisputed is bool);
+    }
+
+    function isValidDispute(data) {
+      return isAuthenticated() &&
+             data.bountyId is string &&
+             data.claimId is string &&
+             data.disputantUid == request.auth.uid &&
+             data.status in ['active', 'resolved'] &&
+             data.evidence is string && data.evidence.size() <= 5000 &&
+             data.createdAt is timestamp &&
+             // Reputation threshold for filing (e.g. 25 RP)
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.reputationScore >= 25;
     }
 
     function isValidReputationEvent(data, userId) {
@@ -170,11 +183,18 @@ service cloud.firestore {
                      );
         allow create: if isAuthenticated() && isValidClaim(request.resource.data, bountyId);
         allow update: if isAuthenticated() && (
-                        (isOwner(resource.data.claimerUid) && isValidClaim(request.resource.data, bountyId)) ||
+                        (isOwner(resource.data.claimerUid) && (isValidClaim(request.resource.data, bountyId) || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDisputed']))) ||
                         (isBountyCreator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
                         isAdmin()
                       );
       }
+    }
+
+    match /disputes/{disputeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidDispute(request.resource.data);
+      allow update: if isAdmin(); // Only admins/moderators can resolve and add judgment
+      allow delete: if isAdmin();
     }
 
     match /{path=**} {
