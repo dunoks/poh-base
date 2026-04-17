@@ -1111,6 +1111,24 @@ export default function App() {
                              <span className="font-mono text-[10px] uppercase font-bold opacity-40">Active Stake</span>
                              <span className="font-mono text-sm font-black italic">{viewedProfile.stakedAmount || 0} ETH</span>
                            </div>
+
+                           {/* Projected Protocol Rewards */}
+                           <div className="bg-black text-[#E4E3E0] p-4 space-y-3 border-l-4 border-yellow-400 shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
+                             <div className="flex justify-between items-center text-[9px] font-mono uppercase font-black">
+                               <span className="flex items-center gap-1"><Zap className="w-3 h-3 text-yellow-400" /> Yield Projection</span>
+                               <span className="text-yellow-400">~{((5 + viewedProfile.reputationScore / 50)).toFixed(1)}% APY</span>
+                             </div>
+                             <div className="space-y-1">
+                               <div className="flex justify-between items-end">
+                                 <span className="font-mono text-[10px] uppercase font-bold opacity-60">Annual Reward</span>
+                                 <span className="font-mono text-xs font-black italic">{(((viewedProfile.stakedAmount || 0) * 0.05) * (1 + viewedProfile.reputationScore / 500)).toFixed(4)} ETH</span>
+                               </div>
+                               <div className="flex justify-between items-end">
+                                 <span className="font-mono text-[9px] uppercase font-bold opacity-40">Network Bonus</span>
+                                 <span className="font-mono text-[9px] font-black text-yellow-400/80">+{ (viewedProfile.reputationScore * 0.1).toFixed(1)} RP Rank Weight</span>
+                               </div>
+                             </div>
+                           </div>
                            
                            {viewedProfile.uid === user.uid && (
                              <div className="space-y-2">
