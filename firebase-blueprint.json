@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Reputation and identity data for a BaseTrust user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "reputationScore": { "type": "number", "description": "Computed reputation based on completed bounties and POH" },
+        "pohVerified": { "type": "boolean", "description": "Whether the user passed Proof of Humanity" },
+        "ethosStatus": { "type": "string", "enum": ["none", "bronze", "silver", "gold"] },
+        "walletAddress": { "type": "string", "description": "Basechain wallet address" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "reputationScore", "pohVerified"]
+    },
+    "Bounty": {
+      "title": "Bounty Listing",
+      "description": "A task or project listed on the marketplace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "creatorUid": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "reward": { "type": "number" },
+        "network": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "pending", "claimed", "completed", "cancelled"] },
+        "requiredReputation": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["creatorUid", "title", "reward", "status"]
+    },
+    "BountyClaim": {
+      "title": "Bounty Claim",
+      "description": "An application or claim by a user for a specific bounty.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "bountyId": { "type": "string" },
+        "claimerUid": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "submitted"] },
+        "submissionUrl": { "type": "string" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bountyId", "claimerUid", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Access user profiles"
+    },
+    "/bounties/{bountyId}": {
+      "schema": "Bounty",
+      "description": "Access bounty listings"
+    },
+    "/bounties/{bountyId}/claims/{claimId}": {
+      "schema": "BountyClaim",
+      "description": "Access claims for a specific bounty"
+    }
+  }
+}

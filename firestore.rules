@@ -1,0 +1,157 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - uid: string (required) - Firebase Auth UID
+//   - displayName: string (optional)
+//   - photoURL: string (optional)
+//   - reputationScore: number (required) - Min 0
+//   - pohVerified: bool (required)
+//   - ethosStatus: string (required) - enum [none, bronze, silver, gold]
+//   - walletAddress: string (optional)
+//   - joinedAt: timestamp (optional)
+//
+// Collection: bounties
+// Document ID: {bountyId}
+// Fields:
+//   - creatorUid: string (required) - Author of bounty
+//   - title: string (required) - 5-100 chars
+//   - description: string (required) - < 2000 chars
+//   - reward: number (required) - > 0
+//   - network: string (required) - e.g. "Base"
+//   - status: string (required) - enum [open, pending, claimed, completed, cancelled]
+//   - requiredReputation: number (required)
+//   - createdAt: timestamp (required)
+//
+// Collection: bounties/{bountyId}/claims
+// Document ID: {claimId}
+// Fields:
+//   - bountyId: string (required)
+//   - claimerUid: string (required)
+//   - status: string (required) - enum [pending, accepted, rejected, submitted]
+//   - submissionUrl: string (optional)
+//   - claimedAt: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isBountyCreator() {
+      return isAuthenticated() && request.auth.uid == resource.data.creatorUid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function validString(field, min, max) {
+      return request.resource.data[field] is string && 
+             request.resource.data[field].size() >= min && 
+             request.resource.data[field].size() <= max;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ethosStatus == 'admin' ||
+         (request.auth.token.email == "sininmicrosoft@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.reputationScore is number && data.reputationScore >= 0 &&
+             data.pohVerified is bool &&
+             data.ethosStatus in ['none', 'bronze', 'silver', 'gold', 'admin'] &&
+             (!('displayName' in data) || data.displayName is string && data.displayName.size() <= 50);
+    }
+
+    function isValidBounty(data) {
+      return data.creatorUid == request.auth.uid &&
+             data.reward is number && data.reward > 0 &&
+             data.title is string && data.title.size() >= 5 && data.title.size() <= 100 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.status in ['open', 'pending', 'claimed', 'completed', 'cancelled'] &&
+             data.requiredReputation is number &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidClaim(data, bountyId) {
+      return data.claimerUid == request.auth.uid &&
+             data.bountyId == bountyId &&
+             data.status in ['pending', 'accepted', 'rejected', 'submitted'] &&
+             data.claimedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid;
+    }
+
+    match /bounties/{bountyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidBounty(request.resource.data);
+      allow update: if isAuthenticated() && (
+                      // Only creator can update status/details
+                      (isBountyCreator() && isValidBounty(request.resource.data)) ||
+                      // Or admin
+                      isAdmin()
+                    );
+      allow delete: if isAdmin();
+
+      match /claims/{claimId} {
+        allow read: if isAuthenticated() && (
+                       isOwner(resource.data.claimerUid) || 
+                       isBountyCreator() || 
+                       isAdmin()
+                     );
+        allow create: if isAuthenticated() && isValidClaim(request.resource.data, bountyId);
+        allow update: if isAuthenticated() && (
+                        (isOwner(resource.data.claimerUid) && isValidClaim(request.resource.data, bountyId)) ||
+                        (isBountyCreator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) ||
+                        isAdmin()
+                      );
+      }
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
