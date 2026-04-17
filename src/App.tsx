@@ -149,6 +149,7 @@ export default function App() {
   const [editPhoto, setEditPhoto] = useState('');
   const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
   const [claims, setClaims] = useState<BountyClaim[]>([]);
+  const [submissionUrl, setSubmissionUrl] = useState('');
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -296,10 +297,12 @@ export default function App() {
         bountyId: bounty.id,
         claimerUid: user.uid,
         status: 'pending',
+        submissionUrl: submissionUrl || '',
         claimedAt: serverTimestamp()
       };
       await addDoc(collection(db, 'bounties', bounty.id, 'claims'), claimData);
-      alert("Claim submitted!");
+      setSubmissionUrl('');
+      alert("Claim and submission received!");
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `bounties/${bounty.id}/claims`);
     }
@@ -490,16 +493,28 @@ export default function App() {
                         
                         <div className="flex gap-4 pt-4 border-t border-black/10">
                           {activeBounty.creatorUid !== user.uid ? (
-                            <button 
-                              onClick={() => claimBounty(activeBounty)}
-                              disabled={activeBounty.status !== 'open'}
-                              className={cn(
-                                "flex-1 p-3 font-mono font-black uppercase italic transition-all",
-                                activeBounty.status === 'open' ? "bg-black text-white hover:scale-[1.02]" : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                              )}
-                            >
-                              {activeBounty.status === 'open' ? "Apply for Mission" : "Mission In Progress"}
-                            </button>
+                            <div className="flex-1 space-y-3">
+                              <div className="space-y-1">
+                                <label className="font-mono text-[10px] uppercase opacity-40 font-bold tracking-widest text-[#141414]">Proof of Completion / Submission URL</label>
+                                <input 
+                                  value={submissionUrl}
+                                  onChange={(e) => setSubmissionUrl(e.target.value)}
+                                  placeholder="https://github.com/... or https://ipfs.io/..."
+                                  disabled={activeBounty.status !== 'open'}
+                                  className="w-full bg-[#E4E3E0] border border-black p-3 font-mono text-xs focus:outline-none placeholder:opacity-30"
+                                />
+                              </div>
+                              <button 
+                                onClick={() => claimBounty(activeBounty)}
+                                disabled={activeBounty.status !== 'open'}
+                                className={cn(
+                                  "w-full p-3 font-mono font-black uppercase italic transition-all",
+                                  activeBounty.status === 'open' ? "bg-black text-white hover:scale-[1.02]" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                                )}
+                              >
+                                {activeBounty.status === 'open' ? "Submit Claim & Work" : "Mission In Progress"}
+                              </button>
+                            </div>
                           ) : (
                             <div className="flex-1 space-y-4">
                               <h4 className="font-mono font-black text-[10px] uppercase bg-black text-white px-2 py-1 inline-block italic">Incoming Protocol Claims</h4>
@@ -509,11 +524,19 @@ export default function App() {
                                 <div className="space-y-2">
                                   {claims.map(c => (
                                     <div key={c.id} className="border border-black p-3 flex justify-between items-center bg-[#fdfdfd]">
-                                      <div className="font-mono text-[10px]">
-                                        <span className="opacity-40 uppercase">Claimer:</span> {c.claimerUid.slice(0, 8)}...
-                                        <span className={cn("ml-2 font-bold uppercase", c.status === 'accepted' ? "text-green-600" : c.status === 'rejected' ? "text-red-600" : "text-blue-600")}>
-                                          [{c.status}]
-                                        </span>
+                                      <div className="font-mono text-[10px] space-y-1">
+                                        <div>
+                                          <span className="opacity-40 uppercase">Claimer:</span> {c.claimerUid.slice(0, 8)}...
+                                          <span className={cn("ml-2 font-bold uppercase", c.status === 'accepted' ? "text-green-600" : c.status === 'rejected' ? "text-red-600" : "text-blue-600")}>
+                                            [{c.status}]
+                                          </span>
+                                        </div>
+                                        {c.submissionUrl && (
+                                          <div className="flex items-center gap-1">
+                                            <ExternalLink className="w-3 h-3" />
+                                            <a href={c.submissionUrl} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline break-all">{c.submissionUrl}</a>
+                                          </div>
+                                        )}
                                       </div>
                                       {c.status === 'pending' && (
                                         <div className="flex gap-2">

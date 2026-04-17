@@ -111,7 +111,8 @@ service cloud.firestore {
       return data.claimerUid == request.auth.uid &&
              data.bountyId == bountyId &&
              data.status in ['pending', 'accepted', 'rejected', 'submitted'] &&
-             data.claimedAt is timestamp;
+             data.claimedAt is timestamp &&
+             (!('submissionUrl' in data) || data.submissionUrl is string && data.submissionUrl.size() <= 500);
     }
 
     // ===============================================================
