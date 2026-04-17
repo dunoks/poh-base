@@ -33,7 +33,10 @@ import {
   Star,
   ExternalLink,
   ChevronRight,
-  Verified
+  Verified,
+  Twitter,
+  Github,
+  Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
@@ -54,6 +57,9 @@ interface UserProfile {
   ethosStatus: 'none' | 'bronze' | 'silver' | 'gold' | 'admin';
   walletAddress?: string;
   stakedAmount?: number;
+  twitter?: string;
+  github?: string;
+  lastWalletScan?: any;
   joinedAt?: any;
 }
 
@@ -158,6 +164,9 @@ export default function App() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhoto, setEditPhoto] = useState('');
+  const [editTwitter, setEditTwitter] = useState('');
+  const [editGithub, setEditGithub] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
   const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
   const [claims, setClaims] = useState<BountyClaim[]>([]);
   const [submissionUrl, setSubmissionUrl] = useState('');
@@ -314,9 +323,11 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         displayName: editName,
-        photoURL: editPhoto
+        photoURL: editPhoto,
+        twitter: editTwitter,
+        github: editGithub
       });
-      setProfile({ ...profile, displayName: editName, photoURL: editPhoto });
+      setProfile({ ...profile, displayName: editName, photoURL: editPhoto, twitter: editTwitter, github: editGithub });
       setIsEditingProfile(false);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
@@ -327,7 +338,45 @@ export default function App() {
     if (viewedProfile && user && viewedProfile.uid === user.uid) {
       setEditName(viewedProfile.displayName);
       setEditPhoto(viewedProfile.photoURL);
+      setEditTwitter(viewedProfile.twitter || '');
+      setEditGithub(viewedProfile.github || '');
       setIsEditingProfile(true);
+    }
+  };
+
+  const scanWallet = async () => {
+    if (!user || !profile) return;
+    setIsScanning(true);
+    
+    // Simulate complex scanning
+    await new Promise(r => setTimeout(r, 2500));
+    
+    try {
+      const repGain = 25; // Bonus for scanning
+      const newScore = profile.reputationScore + repGain;
+      
+      await updateDoc(doc(db, 'users', user.uid), {
+        reputationScore: newScore,
+        lastWalletScan: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'users', user.uid, 'reputationHistory'), {
+        userId: user.uid,
+        changeAmount: repGain,
+        newScore: newScore,
+        reason: "Wallet Activity Attestation Scan",
+        timestamp: serverTimestamp()
+      });
+
+      setProfile(p => p ? { ...p, reputationScore: newScore, lastWalletScan: new Date() } : null);
+      if (viewedProfile?.uid === user.uid) {
+        setViewedProfile(p => p ? { ...p, reputationScore: newScore, lastWalletScan: new Date() } : null);
+      }
+      setIsScanning(false);
+      alert("Scan complete! Activity attested. +25 Reputation Released.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      setIsScanning(false);
     }
   };
 
@@ -796,6 +845,26 @@ export default function App() {
                                   className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none"
                                 />
                               </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="font-mono text-[10px] uppercase opacity-40 font-bold">Twitter Handle</label>
+                                  <input 
+                                    value={editTwitter} 
+                                    onChange={(e) => setEditTwitter(e.target.value)}
+                                    className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none"
+                                    placeholder="@handle"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="font-mono text-[10px] uppercase opacity-40 font-bold">Github User</label>
+                                  <input 
+                                    value={editGithub} 
+                                    onChange={(e) => setEditGithub(e.target.value)}
+                                    className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none"
+                                    placeholder="username"
+                                  />
+                                </div>
+                              </div>
                               <div className="flex gap-2">
                                 <button type="submit" className="bg-black text-white px-4 py-1 font-mono text-[10px] uppercase font-bold">Save Changes</button>
                                 <button type="button" onClick={() => setIsEditingProfile(false)} className="border border-black px-4 py-1 font-mono text-[10px] uppercase font-bold hover:bg-black/5">Cancel</button>
@@ -817,6 +886,18 @@ export default function App() {
                                     >
                                       <PlusCircle className="w-4 h-4 rotate-45" />
                                     </button>
+                                  )}
+                                </div>
+                                <div className="flex gap-4 mt-1">
+                                  {viewedProfile.twitter && (
+                                    <a href={`https://twitter.com/${viewedProfile.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 font-mono text-[9px] uppercase font-bold opacity-60 hover:opacity-100 hover:text-blue-500 transition-all">
+                                      <Twitter className="w-3 h-3" /> {viewedProfile.twitter}
+                                    </a>
+                                  )}
+                                  {viewedProfile.github && (
+                                    <a href={`https://github.com/${viewedProfile.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 font-mono text-[9px] uppercase font-bold opacity-60 hover:opacity-100 hover:text-purple-600 transition-all">
+                                      <Github className="w-3 h-3" /> {viewedProfile.github}
+                                    </a>
                                   )}
                                 </div>
                               </div>
@@ -845,7 +926,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4">
+                    <div className="grid md:grid-cols-3 gap-4">
                       <div className="bg-white border border-black p-6 space-y-4">
                         <h3 className="font-mono font-black uppercase italic border-b border-black pb-2 text-xs">Trust Signals (Ethos)</h3>
                         <div className="space-y-3">
@@ -862,6 +943,58 @@ export default function App() {
                              </div>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="bg-white border border-black p-6 space-y-4 flex flex-col justify-between">
+                         <div className="space-y-2">
+                            <h3 className="font-mono font-black uppercase italic border-b border-black pb-2 text-xs">Activity Scanner</h3>
+                            <p className="font-mono text-[10px] uppercase leading-relaxed opacity-60">
+                              Attest to your wallet activity on Base <br /> to verify user depth and consistency.
+                            </p>
+                         </div>
+                         
+                         <div className="space-y-3 mt-4">
+                           <div className="flex justify-between items-end">
+                             <span className="font-mono text-[10px] uppercase font-bold opacity-40">Last Scan</span>
+                             <span className="font-mono text-[10px] font-black italic">
+                               {viewedProfile.lastWalletScan ? formatDistanceToNow(viewedProfile.lastWalletScan instanceof Date ? viewedProfile.lastWalletScan : viewedProfile.lastWalletScan.toDate()) + ' ago' : 'NEVER'}
+                             </span>
+                           </div>
+
+                           {viewedProfile.uid === user.uid && (
+                             <button 
+                               onClick={scanWallet}
+                               disabled={isScanning}
+                               className={cn(
+                                 "w-full py-2 font-mono text-[10px] uppercase font-bold border border-black transition-all flex items-center justify-center gap-2",
+                                 isScanning ? "bg-black text-white" : "bg-white text-black hover:bg-black hover:text-white"
+                               )}
+                             >
+                               {isScanning ? (
+                                 <>
+                                   <motion.div 
+                                     animate={{ rotate: 360 }}
+                                     transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                                   >
+                                     <Database className="w-3 h-3" />
+                                   </motion.div>
+                                   Scanning Base Layer...
+                                 </>
+                               ) : (
+                                 <>
+                                   <Database className="w-3 h-3" /> Scan Activity
+                                 </>
+                               )}
+                             </button>
+                           )}
+
+                           {viewedProfile.uid !== user.uid && viewedProfile.lastWalletScan && (
+                             <div className="p-2 border border-black/5 bg-black/5 flex items-center gap-2">
+                               <CheckCircle2 className="w-4 h-4 text-green-600" />
+                               <span className="font-mono text-[9px] uppercase font-bold italic opacity-60">Activity Authenticated</span>
+                             </div>
+                           )}
+                         </div>
                       </div>
 
                       <div className="bg-white border border-black p-6 space-y-4 flex flex-col justify-between">

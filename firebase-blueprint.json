@@ -13,6 +13,9 @@
         "ethosStatus": { "type": "string", "enum": ["none", "bronze", "silver", "gold", "admin"] },
         "walletAddress": { "type": "string", "description": "Basechain wallet address" },
         "stakedAmount": { "type": "number", "description": "Amount of ETH staked by the user" },
+        "twitter": { "type": "string", "description": "Twitter/X handle" },
+        "github": { "type": "string", "description": "GitHub username" },
+        "lastWalletScan": { "type": "string", "format": "date-time" },
         "joinedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "reputationScore", "pohVerified"]
