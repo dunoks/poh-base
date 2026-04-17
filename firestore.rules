@@ -115,6 +115,14 @@ service cloud.firestore {
              (!('submissionUrl' in data) || data.submissionUrl is string && data.submissionUrl.size() <= 500);
     }
 
+    function isValidReputationEvent(data, userId) {
+      return data.userId == userId &&
+             data.changeAmount is number &&
+             data.newScore is number &&
+             data.reason is string && data.reason.size() <= 200 &&
+             data.timestamp is timestamp;
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -124,6 +132,11 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
                       request.resource.data.uid == resource.data.uid;
+
+      match /reputationHistory/{eventId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId) && isValidReputationEvent(request.resource.data, userId);
+      }
     }
 
     match /bounties/{bountyId} {

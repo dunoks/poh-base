@@ -46,12 +46,29 @@
         "claimedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["bountyId", "claimerUid", "status"]
+    },
+    "ReputationEvent": {
+      "title": "Reputation Event",
+      "description": "A record of a reputation change for a user account.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "changeAmount": { "type": "number" },
+        "newScore": { "type": "number" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "changeAmount", "newScore", "reason", "timestamp"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "Access user profiles"
+    },
+    "/users/{userId}/reputationHistory/{eventId}": {
+      "schema": "ReputationEvent",
+      "description": "User reputation history track"
     },
     "/bounties/{bountyId}": {
       "schema": "Bounty",

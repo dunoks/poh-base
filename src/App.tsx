@@ -77,6 +77,15 @@ interface BountyClaim {
   claimedAt: any;
 }
 
+interface ReputationEvent {
+  id: string;
+  userId: string;
+  changeAmount: number;
+  newScore: number;
+  reason: string;
+  timestamp: any;
+}
+
 // --- Components ---
 
 const Navbar = ({ 
@@ -152,6 +161,7 @@ export default function App() {
   const [submissionUrl, setSubmissionUrl] = useState('');
   const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [repHistory, setRepHistory] = useState<ReputationEvent[]>([]);
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -213,6 +223,20 @@ export default function App() {
     return unsubscribe;
   }, [user, activeBounty]);
 
+  // Reputation History Listener
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'reputationHistory'), 
+      orderBy('timestamp', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const hList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReputationEvent));
+      setRepHistory(hList);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/reputationHistory`));
+    return unsubscribe;
+  }, [user]);
+
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
@@ -255,11 +279,24 @@ export default function App() {
     if (!user || !profile) return;
     try {
       const newStatus = !profile.pohVerified;
+      const change = newStatus ? 50 : -50;
+      const newScore = profile.reputationScore + change;
+      
       await updateDoc(doc(db, 'users', user.uid), { 
         pohVerified: newStatus,
-        reputationScore: profile.reputationScore + (newStatus ? 50 : -50)
+        reputationScore: newScore
       });
-      setProfile(p => p ? { ...p, pohVerified: newStatus, reputationScore: p.reputationScore + (newStatus ? 50 : -50) } : null);
+
+      // Record History
+      await addDoc(collection(db, 'users', user.uid, 'reputationHistory'), {
+        userId: user.uid,
+        changeAmount: change,
+        newScore: newScore,
+        reason: newStatus ? "Proof of Humanity Verified" : "Proof of Humanity Status Removed",
+        timestamp: serverTimestamp()
+      });
+
+      setProfile(p => p ? { ...p, pohVerified: newStatus, reputationScore: newScore } : null);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
     }
@@ -725,6 +762,37 @@ export default function App() {
                            Stake Base ETH to increase <br /> priority and trust weight in <br /> future protocol governance.
                          </p>
                          <button disabled className="mt-4 border border-black px-6 py-2 text-[10px] font-mono uppercase font-bold">Coming Soon</button>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-black p-6 space-y-4">
+                      <h3 className="font-mono font-black uppercase italic border-b border-black pb-2 text-xs">Reputation History</h3>
+                      <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                        {repHistory.length === 0 ? (
+                          <p className="font-mono text-[10px] opacity-40 py-4 uppercase italic text-center">Protocol history is currently empty.</p>
+                        ) : (
+                          repHistory.map((event) => (
+                            <div key={event.id} className="data-row flex justify-between items-center py-3 px-4 border border-black/5 bg-[#fafafa]">
+                              <div className="space-y-1">
+                                <div className="font-mono text-[11px] font-bold uppercase">{event.reason}</div>
+                                <div className="font-mono text-[9px] opacity-40 uppercase">
+                                  {event.timestamp ? formatDistanceToNow(event.timestamp.toDate()) + ' ago' : 'Processing...'}
+                                </div>
+                              </div>
+                              <div className="text-right space-y-1">
+                                <div className={cn(
+                                  "font-mono text-[11px] font-black uppercase italic",
+                                  event.changeAmount > 0 ? "text-green-600" : "text-red-600"
+                                )}>
+                                  {event.changeAmount > 0 ? '+' : ''}{event.changeAmount} RP
+                                </div>
+                                <div className="font-mono text-[9px] opacity-40 uppercase font-bold">
+                                  Balance: {event.newScore}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   </motion.section>
