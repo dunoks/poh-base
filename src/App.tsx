@@ -490,8 +490,30 @@ export default function App() {
         claimedAt: serverTimestamp()
       };
       await addDoc(collection(db, 'bounties', bounty.id, 'claims'), claimData);
+
+      // Grant participation reputation
+      const participationRep = 5;
+      const newScore = profile.reputationScore + participationRep;
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        reputationScore: newScore
+      });
+
+      await addDoc(collection(db, 'users', user.uid, 'reputationHistory'), {
+        userId: user.uid,
+        changeAmount: participationRep,
+        newScore: newScore,
+        reason: `Participation: Claimed ${bounty.title}`,
+        timestamp: serverTimestamp()
+      });
+
+      setProfile(p => p ? { ...p, reputationScore: newScore } : null);
+      if (viewedProfile?.uid === user.uid) {
+        setViewedProfile(p => p ? { ...p, reputationScore: newScore } : null);
+      }
+
       setSubmissionUrl('');
-      alert("Claim and submission received!");
+      alert(`Claim submitted! +${participationRep} RP granted for protocol participation.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `bounties/${bounty.id}/claims`);
     }
