@@ -1,0 +1,6 @@
+{
+  "name": "BaseTrust - Reputation & Bounties",
+  "description": "A decentralized reputation network and bounty marketplace on Base. Includes Proof of Humanity (POH) verification and Ethos-style trust signals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
