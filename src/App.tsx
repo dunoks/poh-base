@@ -51,8 +51,9 @@ interface UserProfile {
   photoURL: string;
   reputationScore: number;
   pohVerified: boolean;
-  ethosStatus: 'none' | 'bronze' | 'silver' | 'gold';
+  ethosStatus: 'none' | 'bronze' | 'silver' | 'gold' | 'admin';
   walletAddress?: string;
+  stakedAmount?: number;
   joinedAt?: any;
 }
 
@@ -160,6 +161,7 @@ export default function App() {
   const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
   const [claims, setClaims] = useState<BountyClaim[]>([]);
   const [submissionUrl, setSubmissionUrl] = useState('');
+  const [stakeInput, setStakeInput] = useState('0.1');
   const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [repHistory, setRepHistory] = useState<ReputationEvent[]>([]);
@@ -344,6 +346,41 @@ export default function App() {
     }
   };
 
+  const stakeETH = async () => {
+    if (!user || !profile) return;
+    const amount = parseFloat(stakeInput);
+    if (isNaN(amount) || amount <= 0) return;
+
+    try {
+      const currentStaked = profile.stakedAmount || 0;
+      const newStaked = currentStaked + amount;
+      const repChange = Math.floor(amount * 100); // 100 RP per 1 ETH
+      const newScore = profile.reputationScore + repChange;
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        stakedAmount: newStaked,
+        reputationScore: newScore
+      });
+
+      // Record History
+      await addDoc(collection(db, 'users', user.uid, 'reputationHistory'), {
+        userId: user.uid,
+        changeAmount: repChange,
+        newScore: newScore,
+        reason: `Staked ${amount} Base ETH`,
+        timestamp: serverTimestamp()
+      });
+
+      setProfile(p => p ? { ...p, stakedAmount: newStaked, reputationScore: newScore } : null);
+      if (viewedProfile?.uid === user.uid) {
+        setViewedProfile(p => p ? { ...p, stakedAmount: newStaked, reputationScore: newScore } : null);
+      }
+      setStakeInput('0.1');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
   const claimBounty = async (bounty: Bounty) => {
     if (!user || !profile) return;
     if (profile.reputationScore < bounty.requiredReputation) {
@@ -378,6 +415,37 @@ export default function App() {
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `bounties/${activeBounty.id}/claims/${claim.id}`);
+    }
+  };
+
+  const finalizeBounty = async (claim: BountyClaim) => {
+    if (!activeBounty || !user || activeBounty.creatorUid !== user.uid) return;
+    try {
+      await updateDoc(doc(db, 'bounties', activeBounty.id), { status: 'completed' });
+      
+      const claimerDoc = await getDoc(doc(db, 'users', claim.claimerUid));
+      if (claimerDoc.exists()) {
+        const claimerProfile = claimerDoc.data() as UserProfile;
+        const repGain = Math.floor(activeBounty.reward * 20) + 10; // Extra base catch
+        const newScore = claimerProfile.reputationScore + repGain;
+        
+        await updateDoc(doc(db, 'users', claim.claimerUid), {
+          reputationScore: newScore
+        });
+        
+        await addDoc(collection(db, 'users', claim.claimerUid, 'reputationHistory'), {
+          userId: claim.claimerUid,
+          changeAmount: repGain,
+          newScore: newScore,
+          reason: `Completed Bounty: ${activeBounty.title}`,
+          timestamp: serverTimestamp()
+        });
+      }
+      
+      setActiveBounty({ ...activeBounty, status: 'completed' });
+      alert("Mission Successful. Reputation assets released to agent.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `bounties/${activeBounty.id}`);
     }
   };
 
@@ -641,6 +709,14 @@ export default function App() {
                                           </button>
                                         </div>
                                       )}
+                                      {c.status === 'accepted' && activeBounty.status === 'claimed' && (
+                                        <button 
+                                          onClick={() => finalizeBounty(c)}
+                                          className="px-2 py-1 bg-black text-white border border-black font-mono text-[10px] uppercase font-bold hover:scale-105 transition-transform whitespace-nowrap"
+                                        >
+                                          Finalize & Release Rep
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -775,8 +851,8 @@ export default function App() {
                         <div className="space-y-3">
                           {[
                             { label: 'Network Age', value: viewedProfile.joinedAt ? formatDistanceToNow(viewedProfile.joinedAt.toDate()) : '...', icon: Globe },
-                            { label: 'Completed Jobs', value: '0', icon: CheckCircle2 },
-                            { label: 'Attestations', value: '0', icon: ShieldCheck }
+                            { label: 'Governance Power', value: `${((viewedProfile.reputationScore + (viewedProfile.stakedAmount || 0) * 100) / 10).toFixed(1)} WT`, icon: Zap },
+                            { label: 'Attestations', value: viewedProfile.ethosStatus === 'admin' ? 'VERIFIED' : '0', icon: ShieldCheck }
                           ].map((sig, i) => (
                              <div key={i} className="flex justify-between items-center py-2 border-b border-black/10">
                                <div className="flex items-center gap-2 opacity-60 font-mono text-[10px] uppercase font-bold">
@@ -788,12 +864,53 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="bg-white border border-black p-6 space-y-4 flex flex-col justify-center items-center text-center opacity-40">
-                         <Zap className="w-12 h-12 mb-2" />
-                         <p className="font-mono text-xs uppercase leading-relaxed">
-                           Stake Base ETH to increase <br /> priority and trust weight in <br /> future protocol governance.
-                         </p>
-                         <button disabled className="mt-4 border border-black px-6 py-2 text-[10px] font-mono uppercase font-bold">Coming Soon</button>
+                      <div className="bg-white border border-black p-6 space-y-4 flex flex-col justify-between">
+                         <div className="space-y-2">
+                           <h3 className="font-mono font-black uppercase italic border-b border-black pb-2 text-xs">Staking Protocol</h3>
+                           <p className="font-mono text-[10px] uppercase leading-relaxed opacity-60">
+                             Stake Base ETH to increase your <br /> priority and trust weight in <br /> future protocol governance.
+                           </p>
+                         </div>
+                         
+                         <div className="space-y-3 mt-4">
+                           <div className="flex justify-between items-end">
+                             <span className="font-mono text-[10px] uppercase font-bold opacity-40">Active Stake</span>
+                             <span className="font-mono text-sm font-black italic">{viewedProfile.stakedAmount || 0} ETH</span>
+                           </div>
+                           
+                           {viewedProfile.uid === user.uid && (
+                             <div className="space-y-2">
+                               <div className="relative">
+                                 <input 
+                                   type="number" 
+                                   step="0.1"
+                                   value={stakeInput}
+                                   onChange={(e) => setStakeInput(e.target.value)}
+                                   className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none pr-10"
+                                   placeholder="0.1"
+                                 />
+                                 <span className="absolute right-3 top-2 font-mono text-[10px] font-bold opacity-40">ETH</span>
+                               </div>
+                               <button 
+                                 onClick={stakeETH}
+                                 className="w-full bg-black text-white py-2 font-mono text-[10px] uppercase font-bold hover:bg-black/90 transition-colors flex items-center justify-center gap-2"
+                               >
+                                 <Zap className="w-3 h-3 text-yellow-400 fill-yellow-400" /> Stake Assets
+                               </button>
+                             </div>
+                           )}
+                           
+                           {viewedProfile.uid !== user.uid && (
+                             <div className="pt-4 border-t border-black/5">
+                               <div className="p-3 bg-black/5 border border-black/10 rounded flex items-center gap-3">
+                                 <ShieldCheck className="w-5 h-5 opacity-40" />
+                                 <p className="font-mono text-[9px] uppercase leading-tight font-bold italic">
+                                   This user has committed assets to the <br /> network security pool.
+                                 </p>
+                               </div>
+                             </div>
+                           )}
+                         </div>
                       </div>
                     </div>
 
