@@ -4,6 +4,8 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   GoogleAuthProvider, 
+  GithubAuthProvider,
+  TwitterAuthProvider,
   User as FirebaseUser,
   signOut 
 } from 'firebase/auth';
@@ -180,6 +182,7 @@ export default function App() {
   const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [repHistory, setRepHistory] = useState<ReputationEvent[]>([]);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ 
     isOpen: boolean; 
     type: 'accept_claim' | 'reject_claim' | 'finalize_bounty' | 'cancel_bounty' | null;
@@ -263,9 +266,17 @@ export default function App() {
     return unsubscribe;
   }, [user, viewedProfile]);
 
-  const handleLogin = async () => {
+  const handleLogin = async (providerType: 'google' | 'github' | 'twitter' = 'google') => {
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      let provider;
+      if (providerType === 'github') {
+        provider = new GithubAuthProvider();
+      } else if (providerType === 'twitter') {
+        provider = new TwitterAuthProvider();
+      } else {
+        provider = new GoogleAuthProvider();
+      }
+      await signInWithPopup(auth, provider);
     } catch (err) {
       console.error(err);
     }
@@ -565,7 +576,7 @@ export default function App() {
     <div className="min-h-screen">
       <Navbar 
         user={user} 
-        onLogin={handleLogin} 
+        onLogin={() => setShowLoginModal(true)} 
         onLogout={handleLogout} 
         wallet={wallet}
         onConnectWallet={connectWallet}
@@ -582,7 +593,7 @@ export default function App() {
               Verify your humanity. Build your Ethos. Complete Bounties.
             </p>
             <button 
-              onClick={handleLogin}
+              onClick={() => setShowLoginModal(true)}
               className="px-12 py-4 bg-black text-[#E4E3E0] font-mono font-bold uppercase hover:scale-105 transition-transform"
             >
               Enter BaseTrust
@@ -1152,6 +1163,60 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <AnimatePresence>
+        {showLoginModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLoginModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-sm bg-white border-2 border-black p-8 shadow-[8px_8px_0_0_rgba(0,0,0,1)] z-10"
+            >
+              <div className="text-center mb-8">
+                <ShieldCheck className="w-12 h-12 mx-auto mb-4" />
+                <h2 className="text-3xl font-black uppercase italic leading-none m-0">Join Network</h2>
+                <p className="font-mono text-[10px] uppercase opacity-40 mt-1">Select Authentication Gateway</p>
+              </div>
+
+              <div className="space-y-3">
+                <button 
+                  onClick={() => { handleLogin('google'); setShowLoginModal(false); }}
+                  className="w-full border border-black p-3 font-mono text-xs uppercase font-bold flex items-center justify-center gap-3 hover:bg-black hover:text-white transition-all group"
+                >
+                  <Globe className="w-4 h-4 group-hover:rotate-12 transition-transform" /> Sign in with Google
+                </button>
+                <button 
+                  onClick={() => { handleLogin('github'); setShowLoginModal(false); }}
+                  className="w-full border border-black p-3 font-mono text-xs uppercase font-bold flex items-center justify-center gap-3 hover:bg-black hover:text-white transition-all group"
+                >
+                  <Github className="w-4 h-4 group-hover:rotate-12 transition-transform" /> Sign in with GitHub
+                </button>
+                <button 
+                  onClick={() => { handleLogin('twitter'); setShowLoginModal(false); }}
+                  className="w-full border border-black p-3 font-mono text-xs uppercase font-bold flex items-center justify-center gap-3 hover:bg-black hover:text-white transition-all group"
+                >
+                  <Twitter className="w-4 h-4 group-hover:rotate-12 transition-transform" /> Sign in with Twitter
+                </button>
+              </div>
+
+              <button 
+                onClick={() => setShowLoginModal(false)}
+                className="w-full mt-6 font-mono text-[9px] uppercase opacity-40 hover:opacity-100 hover:underline"
+              >
+                Cancel Connection
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {confirmDialog.isOpen && (
