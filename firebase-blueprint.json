@@ -16,6 +16,8 @@
         "twitter": { "type": "string", "description": "Twitter/X handle" },
         "github": { "type": "string", "description": "GitHub username" },
         "lastWalletScan": { "type": "string", "format": "date-time" },
+        "pohProvider": { "type": "string", "enum": ["eas", "gitcoin", "worldid", "none"] },
+        "pohVerifiedAt": { "type": "string", "format": "date-time" },
         "joinedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "reputationScore", "pohVerified"]

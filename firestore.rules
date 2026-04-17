@@ -16,6 +16,8 @@
 //   - twitter: string (optional)
 //   - github: string (optional)
 //   - lastWalletScan: timestamp (optional)
+//   - pohProvider: string (optional) - enum [eas, gitcoin, worldid, none]
+//   - pohVerifiedAt: timestamp (optional)
 //   - joinedAt: timestamp (optional)
 //
 // Collection: bounties
@@ -102,7 +104,9 @@ service cloud.firestore {
              (!('stakedAmount' in data) || data.stakedAmount is number && data.stakedAmount >= 0) &&
              (!('twitter' in data) || data.twitter is string && data.twitter.size() <= 100) &&
              (!('github' in data) || data.github is string && data.github.size() <= 100) &&
-             (!('lastWalletScan' in data) || data.lastWalletScan is timestamp);
+             (!('lastWalletScan' in data) || data.lastWalletScan is timestamp) &&
+             (!('pohProvider' in data) || data.pohProvider in ['eas', 'gitcoin', 'worldid', 'none']) &&
+             (!('pohVerifiedAt' in data) || data.pohVerifiedAt is timestamp);
     }
 
     function isValidBounty(data) {
