@@ -150,6 +150,8 @@ export default function App() {
   const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
   const [claims, setClaims] = useState<BountyClaim[]>([]);
   const [submissionUrl, setSubmissionUrl] = useState('');
+  const [sortField, setSortField] = useState<'reward' | 'requiredReputation' | 'createdAt'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -183,13 +185,13 @@ export default function App() {
   // Bounties Listener
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'bounties'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'bounties'), orderBy(sortField, sortOrder));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const bList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bounty));
       setBounties(bList);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'bounties'));
     return unsubscribe;
-  }, [user]);
+  }, [user, sortField, sortOrder]);
 
   // Claims Listener for the current user (if claimer) or the current bounty (if creator)
   useEffect(() => {
@@ -424,8 +426,28 @@ export default function App() {
                   >
                     <div className="flex justify-between items-end border-b border-black pb-2">
                        <h2 className="font-mono font-black text-2xl uppercase italic decoration-2 underline-offset-4 decoration-black">Active Bounties</h2>
-                       <div className="flex items-center gap-2 opacity-50 font-mono text-[10px] uppercase">
-                         <Globe className="w-3 h-3" /> Base Network Live
+                       <div className="flex items-center gap-4">
+                         <div className="flex items-center gap-2 border border-black px-2 py-1 bg-white">
+                           <span className="font-mono text-[9px] uppercase opacity-40 font-bold">Sort By:</span>
+                           <select 
+                             value={sortField} 
+                             onChange={(e) => setSortField(e.target.value as any)}
+                             className="font-mono text-[10px] uppercase bg-transparent focus:outline-none cursor-pointer"
+                           >
+                             <option value="createdAt">Date Created</option>
+                             <option value="reward">Reward Amount</option>
+                             <option value="requiredReputation">Min Reputation</option>
+                           </select>
+                           <button 
+                             onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                             className="ml-2 font-mono text-[10px] uppercase font-black hover:scale-110 transition-transform"
+                           >
+                             {sortOrder === 'asc' ? '↑' : '↓'}
+                           </button>
+                         </div>
+                         <div className="flex items-center gap-2 opacity-50 font-mono text-[10px] uppercase">
+                           <Globe className="w-3 h-3" /> Base Network Live
+                         </div>
                        </div>
                     </div>
 
