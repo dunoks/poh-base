@@ -135,6 +135,9 @@ export default function App() {
   const [wallet, setWallet] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'market' | 'profile' | 'create'>('market');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhoto, setEditPhoto] = useState('');
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -225,6 +228,29 @@ export default function App() {
       setProfile(p => p ? { ...p, pohVerified: newStatus, reputationScore: p.reputationScore + (newStatus ? 50 : -50) } : null);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !profile) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        displayName: editName,
+        photoURL: editPhoto
+      });
+      setProfile({ ...profile, displayName: editName, photoURL: editPhoto });
+      setIsEditingProfile(false);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const startEditing = () => {
+    if (profile) {
+      setEditName(profile.displayName);
+      setEditPhoto(profile.photoURL);
+      setIsEditingProfile(true);
     }
   };
 
@@ -422,30 +448,68 @@ export default function App() {
                       
                       <div className="flex flex-col md:flex-row gap-8 items-center">
                         <div className="w-32 h-32 border-2 border-black p-1 bg-white shrink-0 shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
-                          <img src={user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.uid}`} alt="Profile" className="w-full h-full object-cover" />
+                          <img src={profile?.photoURL || user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.uid}`} alt="Profile" className="w-full h-full object-cover" />
                         </div>
-                        <div className="space-y-4 text-center md:text-left">
-                          <div>
-                            <span className="font-mono text-[10px] uppercase opacity-40">{user.email}</span>
-                            <h2 className="text-4xl font-black uppercase italic leading-none">{profile?.displayName}</h2>
-                          </div>
-                          <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                             <div className="border border-black px-3 py-1 bg-black text-white text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
-                               <Award className="w-3 h-3" /> Rank: {profile?.ethosStatus === 'none' ? 'INITIATE' : profile?.ethosStatus}
-                             </div>
-                             <div className="border border-black px-3 py-1 bg-white text-black text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
-                               <Star className="w-3 h-3 fill-black" /> Rep: {profile?.reputationScore}
-                             </div>
-                             <button 
-                               onClick={togglePOH}
-                               className={cn(
-                                 "border border-black px-3 py-1 text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic transition-colors",
-                                 profile?.pohVerified ? "bg-green-100" : "bg-red-100 hover:bg-green-200"
-                               )}
-                             >
-                               <CheckCircle2 className="w-3 h-3" /> POH: {profile?.pohVerified ? "PASSED" : "FAILED / RETEST"}
-                             </button>
-                          </div>
+                        <div className="space-y-4 text-center md:text-left flex-1">
+                          {isEditingProfile ? (
+                            <form onSubmit={saveProfile} className="space-y-3">
+                              <div className="space-y-1">
+                                <label className="font-mono text-[10px] uppercase opacity-40 font-bold">Display Name</label>
+                                <input 
+                                  value={editName} 
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="font-mono text-[10px] uppercase opacity-40 font-bold">Photo URL</label>
+                                <input 
+                                  value={editPhoto} 
+                                  onChange={(e) => setEditPhoto(e.target.value)}
+                                  className="w-full bg-[#E4E3E0] border border-black p-2 font-mono text-xs focus:outline-none"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button type="submit" className="bg-black text-white px-4 py-1 font-mono text-[10px] uppercase font-bold">Save Changes</button>
+                                <button type="button" onClick={() => setIsEditingProfile(false)} className="border border-black px-4 py-1 font-mono text-[10px] uppercase font-bold hover:bg-black/5">Cancel</button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              <div>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <span className="font-mono text-[10px] uppercase opacity-40">{user.email}</span>
+                                    <h2 className="text-4xl font-black uppercase italic leading-none">{profile?.displayName}</h2>
+                                  </div>
+                                  <button 
+                                    onClick={startEditing}
+                                    className="p-1 border border-black hover:bg-black hover:text-white transition-colors"
+                                    title="Edit Profile"
+                                  >
+                                    <PlusCircle className="w-4 h-4 rotate-45" />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                                <div className="border border-black px-3 py-1 bg-black text-white text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
+                                  <Award className="w-3 h-3" /> Rank: {profile?.ethosStatus === 'none' ? 'INITIATE' : profile?.ethosStatus}
+                                </div>
+                                <div className="border border-black px-3 py-1 bg-white text-black text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
+                                  <Star className="w-3 h-3 fill-black" /> Rep: {profile?.reputationScore}
+                                </div>
+                                <button 
+                                  onClick={togglePOH}
+                                  className={cn(
+                                    "border border-black px-3 py-1 text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic transition-colors",
+                                    profile?.pohVerified ? "bg-green-100" : "bg-red-100 hover:bg-green-200"
+                                  )}
+                                >
+                                  <CheckCircle2 className="w-3 h-3" /> POH: {profile?.pohVerified ? "PASSED" : "FAILED / RETEST"}
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
