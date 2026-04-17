@@ -149,6 +149,7 @@ const Navbar = ({
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [viewedProfile, setViewedProfile] = useState<UserProfile | null>(null);
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [wallet, setWallet] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,10 +170,11 @@ export default function App() {
       setUser(u);
       if (u) {
         const userDoc = await getDoc(doc(db, 'users', u.uid));
+        let p: UserProfile;
         if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
+          p = userDoc.data() as UserProfile;
         } else {
-          const newProfile: UserProfile = {
+          p = {
             uid: u.uid,
             displayName: u.displayName || 'Anon',
             photoURL: u.photoURL || '',
@@ -181,11 +183,13 @@ export default function App() {
             ethosStatus: 'none',
             joinedAt: serverTimestamp()
           };
-          await setDoc(doc(db, 'users', u.uid), newProfile);
-          setProfile(newProfile);
+          await setDoc(doc(db, 'users', u.uid), p);
         }
+        setProfile(p);
+        if (!viewedProfile) setViewedProfile(p);
       } else {
         setProfile(null);
+        setViewedProfile(null);
       }
       setLoading(false);
     });
@@ -225,17 +229,17 @@ export default function App() {
 
   // Reputation History Listener
   useEffect(() => {
-    if (!user) return;
+    if (!user || !viewedProfile) return;
     const q = query(
-      collection(db, 'users', user.uid, 'reputationHistory'), 
+      collection(db, 'users', viewedProfile.uid, 'reputationHistory'), 
       orderBy('timestamp', 'desc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const hList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReputationEvent));
       setRepHistory(hList);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/reputationHistory`));
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${viewedProfile.uid}/reputationHistory`));
     return unsubscribe;
-  }, [user]);
+  }, [user, viewedProfile]);
 
   const handleLogin = async () => {
     try {
@@ -318,10 +322,25 @@ export default function App() {
   };
 
   const startEditing = () => {
-    if (profile) {
-      setEditName(profile.displayName);
-      setEditPhoto(profile.photoURL);
+    if (viewedProfile && user && viewedProfile.uid === user.uid) {
+      setEditName(viewedProfile.displayName);
+      setEditPhoto(viewedProfile.photoURL);
       setIsEditingProfile(true);
+    }
+  };
+
+  const showProfile = async (uid: string) => {
+    setLoading(true);
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        setViewedProfile(userDoc.data() as UserProfile);
+        setView('profile');
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `users/${uid}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -442,8 +461,8 @@ export default function App() {
                   Post Bounty <PlusCircle className="w-4 h-4" />
                 </button>
                 <button 
-                  onClick={() => setView('profile')}
-                  className={cn("w-full text-left p-3 border border-black transition-colors flex items-center justify-between", view === 'profile' ? "bg-black text-[#E4E3E0]" : "bg-white hover:bg-black/5")}
+                  onClick={() => user && showProfile(user.uid)}
+                  className={cn("w-full text-left p-3 border border-black transition-colors flex items-center justify-between", (view === 'profile' && viewedProfile?.uid === user.uid) ? "bg-black text-[#E4E3E0]" : "bg-white hover:bg-black/5")}
                 >
                   Your Ethos <User className="w-4 h-4" />
                 </button>
@@ -511,7 +530,16 @@ export default function App() {
                             <div className="col-span-1 font-mono text-[10px] opacity-30">0{idx+1}</div>
                             <div className="col-span-5">
                               <h4 className="font-bold text-sm uppercase leading-tight">{b.title}</h4>
-                              <p className="text-[10px] opacity-60 font-mono truncate">{b.description}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-[10px] opacity-60 font-mono truncate max-w-[150px]">{b.description}</p>
+                                <span className="text-[10px] opacity-20">|</span>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); showProfile(b.creatorUid); }}
+                                  className="text-[9px] font-mono uppercase font-bold hover:underline group flex items-center gap-1"
+                                >
+                                  <User className="w-2 h-2" /> Creator: {b.creatorUid.slice(0, 6)}...
+                                </button>
+                              </div>
                             </div>
                             <div className="col-span-2">
                               <div className="flex items-center gap-1 font-mono font-black text-sm">
@@ -659,7 +687,7 @@ export default function App() {
                   </motion.section>
                 )}
 
-                {view === 'profile' && (
+                {view === 'profile' && viewedProfile && (
                   <motion.section 
                     key="profile"
                     initial={{ opacity: 0, x: 20 }}
@@ -671,7 +699,7 @@ export default function App() {
                       
                       <div className="flex flex-col md:flex-row gap-8 items-center">
                         <div className="w-32 h-32 border-2 border-black p-1 bg-white shrink-0 shadow-[4px_4px_0_0_rgba(0,0,0,1)]">
-                          <img src={profile?.photoURL || user.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.uid}`} alt="Profile" className="w-full h-full object-cover" />
+                          <img src={viewedProfile.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${viewedProfile.uid}`} alt="Profile" className="w-full h-full object-cover" />
                         </div>
                         <div className="space-y-4 text-center md:text-left flex-1">
                           {isEditingProfile ? (
@@ -702,33 +730,37 @@ export default function App() {
                               <div>
                                 <div className="flex justify-between items-start">
                                   <div>
-                                    <span className="font-mono text-[10px] uppercase opacity-40">{user.email}</span>
-                                    <h2 className="text-4xl font-black uppercase italic leading-none">{profile?.displayName}</h2>
+                                    <span className="font-mono text-[10px] uppercase opacity-40">{viewedProfile.uid === user.uid ? user.email : viewedProfile.uid}</span>
+                                    <h2 className="text-4xl font-black uppercase italic leading-none">{viewedProfile.displayName}</h2>
                                   </div>
-                                  <button 
-                                    onClick={startEditing}
-                                    className="p-1 border border-black hover:bg-black hover:text-white transition-colors"
-                                    title="Edit Profile"
-                                  >
-                                    <PlusCircle className="w-4 h-4 rotate-45" />
-                                  </button>
+                                  {viewedProfile.uid === user.uid && (
+                                    <button 
+                                      onClick={startEditing}
+                                      className="p-1 border border-black hover:bg-black hover:text-white transition-colors"
+                                      title="Edit Profile"
+                                    >
+                                      <PlusCircle className="w-4 h-4 rotate-45" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                                 <div className="border border-black px-3 py-1 bg-black text-white text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
-                                  <Award className="w-3 h-3" /> Rank: {profile?.ethosStatus === 'none' ? 'INITIATE' : profile?.ethosStatus}
+                                  <Award className="w-3 h-3" /> Rank: {viewedProfile.ethosStatus === 'none' ? 'INITIATE' : viewedProfile.ethosStatus}
                                 </div>
                                 <div className="border border-black px-3 py-1 bg-white text-black text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic">
-                                  <Star className="w-3 h-3 fill-black" /> Rep: {profile?.reputationScore}
+                                  <Star className="w-3 h-3 fill-black" /> Rep: {viewedProfile.reputationScore}
                                 </div>
                                 <button 
-                                  onClick={togglePOH}
+                                  onClick={() => viewedProfile.uid === user.uid && togglePOH()}
+                                  disabled={viewedProfile.uid !== user.uid}
                                   className={cn(
-                                    "border border-black px-3 py-1 text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic transition-colors",
-                                    profile?.pohVerified ? "bg-green-100" : "bg-red-100 hover:bg-green-200"
+                                    "border border-black px-3 py-1 text-[10px] font-mono font-bold uppercase flex items-center gap-1 italic transition-colors text-left",
+                                    viewedProfile.pohVerified ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800",
+                                    viewedProfile.uid === user.uid && !viewedProfile.pohVerified && "hover:bg-green-200"
                                   )}
                                 >
-                                  <CheckCircle2 className="w-3 h-3" /> POH: {profile?.pohVerified ? "PASSED" : "FAILED / RETEST"}
+                                  <CheckCircle2 className="w-3 h-3" /> POH: {viewedProfile.pohVerified ? "PASSED" : "FAILED / REQUIRED"}
                                 </button>
                               </div>
                             </>
@@ -742,7 +774,7 @@ export default function App() {
                         <h3 className="font-mono font-black uppercase italic border-b border-black pb-2 text-xs">Trust Signals (Ethos)</h3>
                         <div className="space-y-3">
                           {[
-                            { label: 'Network Age', value: profile?.joinedAt ? formatDistanceToNow(profile.joinedAt.toDate()) : '...', icon: Globe },
+                            { label: 'Network Age', value: viewedProfile.joinedAt ? formatDistanceToNow(viewedProfile.joinedAt.toDate()) : '...', icon: Globe },
                             { label: 'Completed Jobs', value: '0', icon: CheckCircle2 },
                             { label: 'Attestations', value: '0', icon: ShieldCheck }
                           ].map((sig, i) => (
