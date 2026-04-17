@@ -68,6 +68,15 @@ interface Bounty {
   createdAt: any;
 }
 
+interface BountyClaim {
+  id: string;
+  bountyId: string;
+  claimerUid: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'submitted';
+  submissionUrl?: string;
+  claimedAt: any;
+}
+
 // --- Components ---
 
 const Navbar = ({ 
@@ -138,6 +147,8 @@ export default function App() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhoto, setEditPhoto] = useState('');
+  const [activeBounty, setActiveBounty] = useState<Bounty | null>(null);
+  const [claims, setClaims] = useState<BountyClaim[]>([]);
 
   // Auth & Profile Listener
   useEffect(() => {
@@ -178,6 +189,26 @@ export default function App() {
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'bounties'));
     return unsubscribe;
   }, [user]);
+
+  // Claims Listener for the current user (if claimer) or the current bounty (if creator)
+  useEffect(() => {
+    if (!user) return;
+    
+    let q;
+    if (activeBounty) {
+      // If we're looking at a specific bounty, show all claims for it
+      q = query(collection(db, 'bounties', activeBounty.id, 'claims'), orderBy('claimedAt', 'desc'));
+    } else {
+      // Default: Could show user's own claims, but let's keep it simple for now
+      return;
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const cList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BountyClaim));
+      setClaims(cList);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'claims'));
+    return unsubscribe;
+  }, [user, activeBounty]);
 
   const handleLogin = async () => {
     try {
@@ -251,6 +282,41 @@ export default function App() {
       setEditName(profile.displayName);
       setEditPhoto(profile.photoURL);
       setIsEditingProfile(true);
+    }
+  };
+
+  const claimBounty = async (bounty: Bounty) => {
+    if (!user || !profile) return;
+    if (profile.reputationScore < bounty.requiredReputation) {
+      alert("Insufficient Reputation Points!");
+      return;
+    }
+    try {
+      const claimData = {
+        bountyId: bounty.id,
+        claimerUid: user.uid,
+        status: 'pending',
+        claimedAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'bounties', bounty.id, 'claims'), claimData);
+      alert("Claim submitted!");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `bounties/${bounty.id}/claims`);
+    }
+  };
+
+  const updateClaimStatus = async (claim: BountyClaim, newStatus: 'accepted' | 'rejected') => {
+    if (!activeBounty || !user) return;
+    try {
+      await updateDoc(doc(db, 'bounties', activeBounty.id, 'claims', claim.id), {
+        status: newStatus
+      });
+      if (newStatus === 'accepted') {
+        await updateDoc(doc(db, 'bounties', activeBounty.id), { status: 'claimed' });
+        setActiveBounty({ ...activeBounty, status: 'claimed' });
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `bounties/${activeBounty.id}/claims/${claim.id}`);
     }
   };
 
@@ -372,7 +438,14 @@ export default function App() {
                         <div className="p-12 text-center opacity-40 italic font-serif">No active bounties found in this sector...</div>
                       ) : (
                         bounties.map((b, idx) => (
-                          <div key={b.id} className="data-row grid grid-cols-12 px-4 py-4 bg-white cursor-pointer items-center border border-black mb-2 shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all">
+                          <div 
+                            key={b.id} 
+                            onClick={() => { setActiveBounty(b); setView('market'); }}
+                            className={cn(
+                              "data-row grid grid-cols-12 px-4 py-4 bg-white cursor-pointer items-center border border-black mb-2 shadow-[2px_2px_0_0_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all",
+                              activeBounty?.id === b.id && "border-l-8 border-l-black"
+                            )}
+                          >
                             <div className="col-span-1 font-mono text-[10px] opacity-30">0{idx+1}</div>
                             <div className="col-span-5">
                               <h4 className="font-bold text-sm uppercase leading-tight">{b.title}</h4>
@@ -399,6 +472,74 @@ export default function App() {
                         ))
                       )}
                     </div>
+
+                    {activeBounty && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white border-2 border-black p-6 space-y-4 shadow-[8px_8px_0_0_rgba(0,0,0,1)]"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="font-mono text-[10px] uppercase opacity-40">Bounty Breakdown</span>
+                            <h3 className="text-2xl font-black uppercase italic leading-none">{activeBounty.title}</h3>
+                          </div>
+                          <button onClick={() => setActiveBounty(null)} className="font-mono text-xs uppercase hover:line-through">Close Detail</button>
+                        </div>
+                        <p className="font-mono text-xs leading-relaxed border-l-2 border-black pl-4 py-2 opacity-80">{activeBounty.description}</p>
+                        
+                        <div className="flex gap-4 pt-4 border-t border-black/10">
+                          {activeBounty.creatorUid !== user.uid ? (
+                            <button 
+                              onClick={() => claimBounty(activeBounty)}
+                              disabled={activeBounty.status !== 'open'}
+                              className={cn(
+                                "flex-1 p-3 font-mono font-black uppercase italic transition-all",
+                                activeBounty.status === 'open' ? "bg-black text-white hover:scale-[1.02]" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                              )}
+                            >
+                              {activeBounty.status === 'open' ? "Apply for Mission" : "Mission In Progress"}
+                            </button>
+                          ) : (
+                            <div className="flex-1 space-y-4">
+                              <h4 className="font-mono font-black text-[10px] uppercase bg-black text-white px-2 py-1 inline-block italic">Incoming Protocol Claims</h4>
+                              {claims.length === 0 ? (
+                                <p className="font-mono text-[10px] opacity-40 py-4 uppercase italic">Scanning for signals... No claims yet.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {claims.map(c => (
+                                    <div key={c.id} className="border border-black p-3 flex justify-between items-center bg-[#fdfdfd]">
+                                      <div className="font-mono text-[10px]">
+                                        <span className="opacity-40 uppercase">Claimer:</span> {c.claimerUid.slice(0, 8)}...
+                                        <span className={cn("ml-2 font-bold uppercase", c.status === 'accepted' ? "text-green-600" : c.status === 'rejected' ? "text-red-600" : "text-blue-600")}>
+                                          [{c.status}]
+                                        </span>
+                                      </div>
+                                      {c.status === 'pending' && (
+                                        <div className="flex gap-2">
+                                          <button 
+                                            onClick={() => updateClaimStatus(c, 'accepted')}
+                                            className="px-2 py-1 bg-green-100 border border-green-800 text-green-800 font-mono text-[10px] uppercase font-bold hover:bg-green-800 hover:text-white"
+                                          >
+                                            Accept
+                                          </button>
+                                          <button 
+                                            onClick={() => updateClaimStatus(c, 'rejected')}
+                                            className="px-2 py-1 bg-red-100 border border-red-800 text-red-800 font-mono text-[10px] uppercase font-bold hover:bg-red-800 hover:text-white"
+                                          >
+                                            Reject
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
                   </motion.section>
                 )}
 
